@@ -14,7 +14,7 @@ dependencies = [
     "alembic",
     "pydantic>=2",
     "pydantic-settings",
-    "openai>=1.40",
+    "openai>=3,<4",
     "pillow>=10.1",
 ]
 
