@@ -5,6 +5,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 from botlooks.bot import texts
+from botlooks.bot.flow import answer_long
 from botlooks.bot.formatting import format_history_item
 from botlooks.db.repositories import AnalysisRepo
 from botlooks.domain.schemas import Mode
@@ -20,6 +21,7 @@ async def on_history(message: Message, analysis_repo: AnalysisRepo) -> None:
     if not items:
         await message.answer(texts.HISTORY_EMPTY)
         return
-    await message.answer(
-        "\n\n".join(format_history_item(cast(Mode, a.mode), a.result, a.created_at) for a in items)
+    await answer_long(
+        message,
+        "\n\n".join(format_history_item(cast(Mode, a.mode), a.result, a.created_at) for a in items),
     )

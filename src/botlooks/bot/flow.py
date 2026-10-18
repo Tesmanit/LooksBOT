@@ -1,7 +1,8 @@
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.types import InlineKeyboardMarkup, Message
 
 from botlooks.bot import texts
+from botlooks.bot.formatting import split_message
 from botlooks.bot.keyboards import packs_kb
 from botlooks.bot.states import AnalysisFlow
 from botlooks.config import PACKS
@@ -31,3 +32,13 @@ async def ask_photo_or_buy(
     await state.set_state(AnalysisFlow.waiting_photo)
     await state.update_data(mode=mode)
     await message.answer(texts.ASK_PHOTO)
+
+
+async def answer_long(
+    message: Message, text: str, reply_markup: InlineKeyboardMarkup | None = None
+) -> None:
+    """Send ``text`` in Telegram-sized chunks; the markup goes on the last chunk only."""
+    chunks = split_message(text)
+    for chunk in chunks[:-1]:
+        await message.answer(chunk)
+    await message.answer(chunks[-1], reply_markup=reply_markup)

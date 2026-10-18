@@ -1,7 +1,12 @@
 from datetime import datetime
 from typing import Any
 
-from botlooks.bot.formatting import format_history_item, format_result, format_weight_plan
+from botlooks.bot.formatting import (
+    format_history_item,
+    format_result,
+    format_weight_plan,
+    split_message,
+)
 from botlooks.bot.texts import DISCLAIMER
 from botlooks.domain.schemas import AppearanceResult, StyleResult
 from botlooks.services.weight import WeightPlan
@@ -70,3 +75,33 @@ def test_history_item() -> None:
     assert "18.10.2026" in out
     assert "Стиль" in out
     assert "&lt;i&gt;x&lt;/i&gt;" in out
+
+
+def test_split_message_short_text_single_chunk() -> None:
+    assert split_message("abc") == ["abc"]
+
+
+def test_split_message_on_section_boundaries() -> None:
+    sections = [f"<b>S{i}</b>\n" + "x" * 40 for i in range(10)]
+    text = "\n\n".join(sections)
+    chunks = split_message(text, limit=100)
+    assert len(chunks) > 1
+    assert all(len(c) <= 100 for c in chunks)
+    assert "\n\n".join(chunks) == text
+    for c in chunks:
+        assert c.count("<b>") == c.count("</b>")
+
+
+def test_split_message_oversized_section_on_lines_then_chars() -> None:
+    section = "<b>T</b>\n" + "\n".join("y" * 30 for _ in range(10))
+    chunks = split_message(section, limit=70)
+    assert all(len(c) <= 70 for c in chunks)
+    assert "\n".join(chunks) == section
+    assert split_message("z" * 250, limit=100) == ["z" * 100, "z" * 100, "z" * 50]
+
+
+def test_split_message_default_limit_is_telegram_max() -> None:
+    text = "\n\n".join("w" * 1000 for _ in range(10))
+    chunks = split_message(text)
+    assert all(len(c) <= 4096 for c in chunks)
+    assert len(chunks) == 3

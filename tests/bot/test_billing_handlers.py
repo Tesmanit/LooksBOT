@@ -150,6 +150,20 @@ async def test_history_lists_items(make_message: Any) -> None:
     repo.last.assert_awaited_once_with(1)
 
 
+async def test_history_long_is_split(make_message: Any) -> None:
+    msg = make_message("/history")
+    repo = AsyncMock()
+    now = datetime(2026, 1, 2, tzinfo=UTC)
+    repo.last.return_value = [
+        SimpleNamespace(mode="style", result={"summary": "a" * 1500}, created_at=now)
+        for _ in range(5)
+    ]
+    await on_history(msg, repo)
+    calls = msg.answer.await_args_list
+    assert len(calls) >= 2
+    assert all(len(c.args[0]) <= 4096 for c in calls)
+
+
 def _cmd(args: str | None) -> Any:
     return SimpleNamespace(args=args)
 

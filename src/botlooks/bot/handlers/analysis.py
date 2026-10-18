@@ -9,7 +9,7 @@ from aiogram.types import BufferedInputFile, CallbackQuery, Message
 from aiogram.utils.chat_action import ChatActionSender
 
 from botlooks.bot import texts
-from botlooks.bot.flow import ask_photo_or_buy
+from botlooks.bot.flow import answer_long, ask_photo_or_buy
 from botlooks.bot.formatting import format_result, format_weight_plan
 from botlooks.bot.handlers.profile import start_profile
 from botlooks.bot.keyboards import (
@@ -112,7 +112,7 @@ async def on_photo(
                 text_markup = (
                     None if isinstance(result, StyleResult) or has_plan_offer else main_menu()
                 )
-                await message.answer(format_result(result), reply_markup=text_markup)
+                await answer_long(message, format_result(result), reply_markup=text_markup)
                 if isinstance(result, StyleResult):
                     png = render_palette(result.palette, result.avoid_colors)
                     await message.answer_photo(

@@ -296,3 +296,19 @@ async def test_weight_term_forged_months(make_callback: Any, analysis: Any) -> N
     await h.on_weight_term(cb, WeightTermCb(analysis_id=1, months=99), analysis)
     assert cb.message.answer.await_args.args[0] == texts.GENERIC_ERROR
     cb.answer.assert_awaited_once()
+
+
+async def test_long_result_split_markup_only_on_last(
+    state: FSMContext, bot: Any, analysis: Any, billing: Any, photo_msg: Any
+) -> None:
+    long = appearance_result().model_copy(update={"summary": "s" * 3000, "face_shape": "f" * 3000})
+    analysis.run.return_value = AnalysisOutcome(long, 7, False)
+    await state.set_state(AnalysisFlow.waiting_photo)
+    await state.update_data(mode="appearance")
+    m = photo_msg()
+    await h.on_photo(m, state, bot, analysis, billing)
+    calls = m.answer.await_args_list
+    assert len(calls) >= 2
+    assert all(len(c.args[0]) <= 4096 for c in calls)
+    assert all(c.kwargs.get("reply_markup") is None for c in calls[:-1])
+    assert calls[-1].kwargs["reply_markup"] is not None

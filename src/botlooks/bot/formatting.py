@@ -98,6 +98,40 @@ def format_weight_plan(plan: WeightPlan) -> str:
     return "\n".join(lines)
 
 
+TELEGRAM_TEXT_LIMIT = 4096
+
+
+def _pack(text: str, separators: tuple[str, ...], limit: int) -> list[str]:
+    if len(text) <= limit:
+        return [text]
+    if not separators:
+        return [text[i : i + limit] for i in range(0, len(text), limit)]
+    sep, rest = separators[0], separators[1:]
+    chunks: list[str] = []
+    current: str | None = None
+    for part in text.split(sep):
+        for piece in _pack(part, rest, limit):
+            if current is None:
+                current = piece
+            elif len(current) + len(sep) + len(piece) <= limit:
+                current = f"{current}{sep}{piece}"
+            else:
+                chunks.append(current)
+                current = piece
+    if current is not None:
+        chunks.append(current)
+    return chunks
+
+
+def split_message(text: str, limit: int = TELEGRAM_TEXT_LIMIT) -> list[str]:
+    """Split text into chunks of at most ``limit`` chars.
+
+    Splits on section boundaries ("\\n\\n"), then on lines, and hard-splits by
+    characters only as a last resort for a single oversized line.
+    """
+    return _pack(text, ("\n\n", "\n"), limit)
+
+
 def format_history_item(mode: Mode, result: dict[str, Any], created_at: datetime) -> str:
     summary = _e(str(result.get("summary", "")))
     return f"{created_at:%d.%m.%Y} — <b>{_MODE_LABEL[mode]}</b>\n{summary}"
