@@ -51,8 +51,7 @@ async def probe(use_json_mode: bool) -> int:
     api_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
     if not api_key:
         print(
-            "DEEPSEEK_API_KEY not set: export it or add DEEPSEEK_API_KEY=... to "
-            f"{ENV_FILE}",
+            f"DEEPSEEK_API_KEY not set: export it or add DEEPSEEK_API_KEY=... to {ENV_FILE}",
             file=sys.stderr,
         )
         return 2
