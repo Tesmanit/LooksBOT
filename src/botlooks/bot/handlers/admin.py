@@ -25,5 +25,7 @@ async def on_refund(
         await message.answer(texts.REFUND_NOT_FOUND)
         return
     await bot.refund_star_payment(user_id=payment.user_id, telegram_payment_charge_id=charge_id)
-    await billing.complete_refund(charge_id)
-    await message.answer(texts.REFUND_OK)
+    if await billing.complete_refund(charge_id):
+        await message.answer(texts.REFUND_OK)
+    else:
+        await message.answer(texts.REFUND_DB_NOT_UPDATED)

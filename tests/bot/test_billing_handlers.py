@@ -191,3 +191,26 @@ def test_build_router_includes_all() -> None:
     root = build_router()
     names = [r.name for r in root.sub_routers]
     assert names == ["start", "profile", "billing", "history", "admin", "analysis"]
+
+
+async def test_refund_db_not_updated(make_message: Any, billing: Any, settings: Any) -> None:
+    msg = make_message("/refund ch")
+    msg.from_user.id = settings.admin_id
+    billing.find_refundable.return_value = SimpleNamespace(user_id=7)
+    billing.complete_refund.return_value = False
+    bot = AsyncMock()
+    await on_refund(msg, _cmd("ch"), bot, billing, settings)
+    bot.refund_star_payment.assert_awaited_once()
+    assert msg.answer.await_args.args[0] == texts.REFUND_DB_NOT_UPDATED
+
+
+async def test_refund_telegram_failure(make_message: Any, billing: Any, settings: Any) -> None:
+    msg = make_message("/refund ch")
+    msg.from_user.id = settings.admin_id
+    billing.find_refundable.return_value = SimpleNamespace(user_id=7)
+    bot = AsyncMock()
+    bot.refund_star_payment.side_effect = RuntimeError("boom")
+    with pytest.raises(RuntimeError):
+        await on_refund(msg, _cmd("ch"), bot, billing, settings)
+    billing.complete_refund.assert_not_awaited()
+    msg.answer.assert_not_awaited()
