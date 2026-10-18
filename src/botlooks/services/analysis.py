@@ -48,9 +48,13 @@ class AnalysisService:
         await self._billing.reserve(user_id)
         try:
             result = await self._analyze(mode, image, profile)
-            if isinstance(result, Unsuitable):
-                await self._billing.release(user_id)
-                return AnalysisOutcome(result, None, False)
+        except BaseException:
+            await self._billing.release(user_id)
+            raise
+        if isinstance(result, Unsuitable):
+            await self._billing.release(user_id)
+            return AnalysisOutcome(result, None, False)
+        try:
             analysis_id = await self._analyses.add(
                 user_id, mode, result.model_dump(mode="json"), self._llm.model
             )

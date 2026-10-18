@@ -226,3 +226,20 @@ async def test_target_weight_for(svc: AnalysisService, users: UserRepo) -> None:
     assert await svc.target_weight_for(1) == 81.0
     await users.upsert(2, "v", 3)
     assert await svc.target_weight_for(2) is None
+
+
+class ReleaseThenFail(BillingService):
+    async def release(self, user_id: int) -> None:
+        await super().release(user_id)
+        raise RuntimeError("after release")
+
+
+async def test_unsuitable_release_not_repeated(
+    sm: Sm, users: UserRepo, analyses: AnalysisRepo, user1: None
+) -> None:
+    billing = ReleaseThenFail(users, PaymentRepo(sm))
+    llm = FakeLLM(['{"status":"unsuitable","reason":"r"}'])
+    svc = AnalysisService(users, analyses, billing, llm)
+    with pytest.raises(RuntimeError):
+        await svc.run(1, "style", b"img")
+    assert await users.get_credits(1) == 3
