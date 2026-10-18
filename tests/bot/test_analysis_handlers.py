@@ -158,7 +158,15 @@ async def test_unsuitable_escapes_reason(
     m = photo_msg()
     await h.on_photo(m, state, bot, analysis, billing)
     assert "&lt;тёмное&gt; &amp; мутное" in m.answer.await_args.args[0]
-    assert await state.get_state() is None
+    # The user is asked for another photo, so keep waiting for it in the same mode.
+    assert await state.get_state() == AnalysisFlow.waiting_photo.state
+    assert (await state.get_data())["mode"] == "style"
+
+
+def test_texts_do_not_promise_photo_when_none_awaited() -> None:
+    assert "фото" not in texts.PARSE_FAILED.lower()
+    assert "выберите режим" in texts.PARSE_FAILED.lower()
+    assert "пришлите фото" not in texts.PROFILE_SAVED.lower()
 
 
 @pytest.mark.parametrize(

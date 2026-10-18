@@ -103,6 +103,7 @@ async def on_photo(
                     texts.UNSUITABLE.format(reason=html.escape(result.reason)),
                     reply_markup=main_menu(),
                 )
+                return  # keep waiting_photo with the same mode: the user is asked to resend
             else:
                 has_plan_offer = (
                     isinstance(result, AppearanceResult)
