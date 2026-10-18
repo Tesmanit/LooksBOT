@@ -4,6 +4,8 @@ import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+from aiogram.types import Message
+
 from botlooks.bot import texts
 from botlooks.bot.handlers.errors import on_error
 from botlooks.log import JsonFormatter
@@ -42,6 +44,28 @@ async def test_error_handler_alerts_on_callback():
     cb = SimpleNamespace(answer=AsyncMock())
     await on_error(_event(callback_query=cb), None)
     cb.answer.assert_awaited_once_with(texts.GENERIC_ERROR, show_alert=True)
+
+
+async def test_error_handler_callback_already_answered_falls_back_to_message():
+    message = AsyncMock(spec=Message)
+    message.answer = AsyncMock()
+    cb = SimpleNamespace(
+        answer=AsyncMock(side_effect=RuntimeError("query is too old")), message=message
+    )
+    await on_error(_event(callback_query=cb), None)
+    message.answer.assert_awaited_once_with(texts.GENERIC_ERROR)
+
+
+async def test_error_handler_callback_fallback_never_raises():
+    message = AsyncMock(spec=Message)
+    message.answer = AsyncMock()
+    message.answer.side_effect = RuntimeError("tg down")
+    cb = SimpleNamespace(answer=AsyncMock(side_effect=RuntimeError("x")), message=message)
+    await on_error(_event(callback_query=cb), None)
+    message.answer.assert_awaited_once()
+    # inaccessible message: no fallback attempted, still no raise
+    cb = SimpleNamespace(answer=AsyncMock(side_effect=RuntimeError("x")), message=None)
+    await on_error(_event(callback_query=cb), None)
 
 
 async def test_error_handler_never_raises():
