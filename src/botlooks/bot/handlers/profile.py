@@ -5,6 +5,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from botlooks.bot import texts
+from botlooks.bot.flow import ask_photo_or_buy
 from botlooks.bot.keyboards import ActivityCb, GenderCb, activity_kb, gender_kb, main_menu
 from botlooks.bot.states import ProfileForm
 from botlooks.db.repositories import UserRepo
@@ -114,6 +115,9 @@ async def on_activity(
     await state.clear()
     if not isinstance(callback.message, Message):
         return
-    # Task 14 swaps this single call site for ask_photo_or_buy(...) when pending_mode is set.
-    del pending_mode, billing
+    if pending_mode in ("appearance", "style") and billing is not None:
+        await ask_photo_or_buy(
+            callback.message, state, pending_mode, billing, user_id=callback.from_user.id
+        )
+        return
     await callback.message.answer(texts.PROFILE_SAVED, reply_markup=main_menu())
