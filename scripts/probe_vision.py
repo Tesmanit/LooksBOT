@@ -10,8 +10,8 @@ project's .env file. The key is never printed.
 from __future__ import annotations
 
 import argparse
-import base64
 import asyncio
+import base64
 import io
 import os
 import sys
