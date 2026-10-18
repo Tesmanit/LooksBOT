@@ -58,7 +58,11 @@ async def test_bad_weight_and_age_keep_step(state: FSMContext, make_message: Any
 
 
 async def test_full_profile_saved(
-    state: FSMContext, make_message: Any, make_callback: Any, user_repo_mock: Any
+    state: FSMContext,
+    make_message: Any,
+    make_callback: Any,
+    user_repo_mock: Any,
+    settings: Any,
 ) -> None:
     await start_profile(make_message(), state, pending_mode=None)
     assert await state.get_state() == ProfileForm.gender.state
@@ -72,7 +76,7 @@ async def test_full_profile_saved(
     await on_age(make_message("30"), state)
     assert await state.get_state() == ProfileForm.activity.state
     cb = make_callback()
-    await on_activity(cb, ActivityCb(activity="medium"), state, user_repo=user_repo_mock)
+    await on_activity(cb, ActivityCb(activity="medium"), state, user_repo_mock, settings)
     cb.answer.assert_awaited()
     user_repo_mock.save_profile.assert_awaited_once_with(
         1,
@@ -83,13 +87,17 @@ async def test_full_profile_saved(
 
 
 async def test_pending_mode_shows_menu(
-    state: FSMContext, make_message: Any, make_callback: Any, user_repo_mock: Any
+    state: FSMContext,
+    make_message: Any,
+    make_callback: Any,
+    user_repo_mock: Any,
+    settings: Any,
 ) -> None:
     await start_profile(make_message(), state, pending_mode="style")
     await state.set_state(ProfileForm.activity)
     await state.update_data(gender="male", height=170, weight=70.0, age=25)
     cb = make_callback()
-    await on_activity(cb, ActivityCb(activity="low"), state, user_repo=user_repo_mock)
+    await on_activity(cb, ActivityCb(activity="low"), state, user_repo_mock, settings)
     assert cb.message.answer.await_args.kwargs["reply_markup"] is not None
     assert await state.get_state() is None
 
@@ -160,3 +168,24 @@ async def test_stale_profile_buttons_are_answered(make_callback: Any) -> None:
     callbacks = [h.callback for h in profile_router.callback_query.handlers]
     assert callbacks.index(on_stale_profile_button) > callbacks.index(on_activity)
     assert callbacks.index(on_stale_profile_button) > callbacks.index(on_gender)
+
+
+async def test_activity_upserts_user_before_saving_profile(
+    state: FSMContext, make_callback: Any, user_repo_mock: Any, settings: Any
+) -> None:
+    await state.set_state(ProfileForm.activity)
+    await state.update_data(gender="male", height=170, weight=70.0, age=25)
+    calls: list[str] = []
+    user_repo_mock.upsert.side_effect = lambda *a: calls.append("upsert")
+    user_repo_mock.save_profile.side_effect = lambda *a: calls.append("save")
+    cb = make_callback()
+    cb.from_user.username = "tester"
+    await on_activity(cb, ActivityCb(activity="low"), state, user_repo_mock, settings)
+    assert calls == ["upsert", "save"]
+    user_repo_mock.upsert.assert_awaited_once_with(1, "tester", settings.start_credits)
+
+
+def test_help_lists_steps_in_order() -> None:
+    text = texts.HELP.lower()
+    assert "выберите режим" in text and "пришлите фото" in text
+    assert text.index("выберите режим") < text.index("пришлите фото")

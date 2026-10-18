@@ -1,14 +1,17 @@
+import logging
+
 from aiogram import Bot, F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, LabeledPrice, Message, PreCheckoutQuery
 
 from botlooks.bot import texts
-from botlooks.bot.keyboards import PackCb, packs_kb
+from botlooks.bot.keyboards import PackCb, main_menu, packs_kb
 from botlooks.config import PACKS, Settings
 from botlooks.db.repositories import UserRepo
 from botlooks.services.billing import BillingService
 
 router = Router(name="billing")
+log = logging.getLogger(__name__)
 
 
 @router.message(Command("buy"))
@@ -54,10 +57,20 @@ async def on_successful_payment(
     if user is None or sp is None:
         return
     await user_repo.upsert(user.id, user.username, settings.start_credits)
-    added = await billing.apply_payment(user.id, sp.invoice_payload, sp.telegram_payment_charge_id)
+    charge_id = sp.telegram_payment_charge_id
+    # Not a secret: the admin needs it for /refund.
+    log.info(
+        "Payment received: user_id=%s telegram_payment_charge_id=%s",
+        user.id,
+        charge_id,
+        extra={"user_id": user.id, "telegram_payment_charge_id": charge_id},
+    )
+    added = await billing.apply_payment(user.id, sp.invoice_payload, charge_id)
     if added is None:
         return
-    await message.answer(texts.PAID.format(credits=await billing.balance(user.id)))
+    await message.answer(
+        texts.PAID.format(credits=await billing.balance(user.id)), reply_markup=main_menu()
+    )
 
 
 @router.message(Command("balance"))
@@ -65,7 +78,7 @@ async def on_balance(message: Message, billing: BillingService) -> None:
     if message.from_user is None:
         return
     credits = await billing.balance(message.from_user.id)
-    await message.answer(texts.BALANCE.format(credits=credits))
+    await message.answer(texts.BALANCE.format(credits=credits), reply_markup=main_menu())
 
 
 @router.message(Command("paysupport"))

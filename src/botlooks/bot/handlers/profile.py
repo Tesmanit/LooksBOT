@@ -9,6 +9,7 @@ from botlooks.bot import texts
 from botlooks.bot.flow import ask_photo_or_buy
 from botlooks.bot.keyboards import ActivityCb, GenderCb, activity_kb, gender_kb, main_menu
 from botlooks.bot.states import ProfileForm
+from botlooks.config import Settings
 from botlooks.db.repositories import UserRepo
 from botlooks.domain.schemas import Profile
 from botlooks.services.billing import BillingService
@@ -100,10 +101,14 @@ async def on_activity(
     callback_data: ActivityCb,
     state: FSMContext,
     user_repo: UserRepo,
+    settings: Settings,
     billing: BillingService | None = None,
 ) -> None:
     await callback.answer()
     data = await state.get_data()
+    user = callback.from_user
+    # A user without a DB row (e.g. never sent /start) would otherwise loop forever.
+    await user_repo.upsert(user.id, user.username, settings.start_credits)
     profile = Profile(
         gender=data["gender"],
         height_cm=data["height"],

@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
@@ -17,7 +18,7 @@ from botlooks.bot.handlers.billing import (
     on_successful_payment,
 )
 from botlooks.bot.handlers.history import on_history
-from botlooks.bot.keyboards import PackCb
+from botlooks.bot.keyboards import PackCb, main_menu
 from botlooks.services.billing import BillingService
 
 
@@ -103,6 +104,26 @@ async def test_successful_payment_upserts_then_credits(
     user_repo_mock.upsert.assert_awaited_once_with(7, "tester", settings.start_credits)
     billing.apply_payment.assert_awaited_once_with(7, "pack_5:u", "ch")
     assert msg.answer.await_args.args[0] == texts.PAID.format(credits=8)
+    assert msg.answer.await_args.kwargs["reply_markup"] == main_menu()
+
+
+async def test_successful_payment_logs_charge_id(
+    make_message: Any,
+    billing: Any,
+    user_repo_mock: Any,
+    settings: Any,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    msg = _payment_msg(make_message)
+    billing.apply_payment.return_value = 5
+    billing.balance.return_value = 8
+    with caplog.at_level(logging.INFO, logger="botlooks.bot.handlers.billing"):
+        await on_successful_payment(msg, billing, user_repo_mock, settings)
+    rec = next(r for r in caplog.records if r.name == "botlooks.bot.handlers.billing")
+    assert rec.levelno == logging.INFO
+    assert "ch" in rec.getMessage() and "7" in rec.getMessage()
+    assert rec.telegram_payment_charge_id == "ch"  # type: ignore[attr-defined]
+    assert rec.user_id == 7  # type: ignore[attr-defined]
 
 
 async def test_duplicate_payment_silent(
@@ -119,6 +140,7 @@ async def test_balance(make_message: Any, billing: Any) -> None:
     billing.balance.return_value = 4
     await on_balance(msg, billing)
     assert msg.answer.await_args.args[0] == texts.BALANCE.format(credits=4)
+    assert msg.answer.await_args.kwargs["reply_markup"] == main_menu()
 
 
 async def test_paysupport(make_message: Any) -> None:

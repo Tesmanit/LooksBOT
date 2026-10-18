@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -30,3 +32,11 @@ def test_packs():
         ("pack_5", 5, 60),
         ("pack_15", 15, 150),
     ]
+
+
+def test_env_example_explains_database_url():
+    lines = (Path(__file__).parent.parent / ".env.example").read_text("utf-8").splitlines()
+    idx = next(i for i, line in enumerate(lines) if line.startswith("DATABASE_URL="))
+    comment = lines[idx - 1]
+    assert comment.startswith("#")
+    assert "compose" in comment.lower() and "literal" in comment.lower()

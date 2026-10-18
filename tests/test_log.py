@@ -27,6 +27,23 @@ def test_json_formatter_includes_exc():
     assert "ValueError: boom" in d["exc"]
 
 
+def test_json_formatter_includes_extra_fields():
+    rec = logging.getLogger("x.extra").makeRecord(
+        "x.extra",
+        logging.WARNING,
+        __file__,
+        1,
+        "retry",
+        (),
+        None,
+        extra={"attempt": 2, "error": "APITimeoutError", "obj": object()},
+    )
+    d = json.loads(JsonFormatter().format(rec))
+    assert d["attempt"] == 2 and d["error"] == "APITimeoutError"
+    assert isinstance(d["obj"], str)
+    assert "args" not in d and "levelno" not in d and d["msg"] == "retry"
+
+
 def _event(message=None, callback_query=None):
     update = SimpleNamespace(message=message, callback_query=callback_query)
     return SimpleNamespace(update=update, exception=RuntimeError("x"))

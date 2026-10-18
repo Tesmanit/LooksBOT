@@ -240,14 +240,18 @@ async def test_no_credits_shows_packs(
 
 
 async def test_profile_done_with_pending_mode_asks_photo(
-    state: FSMContext, make_callback: Any, user_repo_mock: Any, billing: Any
+    state: FSMContext,
+    make_callback: Any,
+    user_repo_mock: Any,
+    billing: Any,
+    settings: Any,
 ) -> None:
     await state.set_state(ProfileForm.activity)
     await state.update_data(
         gender="male", height=170, weight=70.0, age=25, pending_mode="appearance"
     )
     cb = make_callback()
-    await on_activity(cb, ActivityCb(activity="low"), state, user_repo_mock, billing)
+    await on_activity(cb, ActivityCb(activity="low"), state, user_repo_mock, settings, billing)
     assert await state.get_state() == AnalysisFlow.waiting_photo.state
     assert cb.message.answer.await_args.args[0] == texts.ASK_PHOTO
 
