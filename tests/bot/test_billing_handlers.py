@@ -190,7 +190,7 @@ async def test_refund_not_found(
 def test_build_router_includes_all() -> None:
     root = build_router()
     names = [r.name for r in root.sub_routers]
-    assert names == ["start", "profile", "billing", "history", "admin", "analysis"]
+    assert names == ["errors", "start", "profile", "billing", "history", "admin", "analysis"]
 
 
 async def test_refund_db_not_updated(make_message: Any, billing: Any, settings: Any) -> None:

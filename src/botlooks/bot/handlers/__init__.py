@@ -1,10 +1,11 @@
 from aiogram import Router
 
-from botlooks.bot.handlers import admin, analysis, billing, history, profile, start
+from botlooks.bot.handlers import admin, analysis, billing, errors, history, profile, start
 
 
 def build_router() -> Router:
     root = Router(name="root")
+    root.include_router(errors.router)
     root.include_router(start.router)
     root.include_router(profile.router)
     root.include_router(billing.router)
