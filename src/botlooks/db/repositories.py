@@ -151,8 +151,11 @@ class PaymentRepo:
                     .where(User.id == user_id)
                     .values(credits=User.credits + pack.credits)
                 )
-        except IntegrityError:
-            return False
+        except IntegrityError as e:
+            # Only a duplicate charge_id is idempotent; FK violations etc. must surface.
+            if getattr(e.orig, "sqlstate", None) == "23505":
+                return False
+            raise
         return True
 
     async def get_paid(self, charge_id: str) -> Payment | None:

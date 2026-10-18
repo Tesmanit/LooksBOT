@@ -1,5 +1,7 @@
 import asyncio
 
+import pytest
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from botlooks.config import PACKS
@@ -99,3 +101,8 @@ async def test_last_orders_newest_first(sm: SM) -> None:
     assert len(rows) == 5
     assert rows[0].id == ids[-1]
     assert [r.id for r in rows] == ids[:0:-1]
+
+
+async def test_record_paid_unknown_user_raises(sm: SM) -> None:
+    with pytest.raises(IntegrityError):
+        await PaymentRepo(sm).record_paid(404, PACKS["pack_1"], "ch-missing")
