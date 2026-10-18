@@ -1,6 +1,7 @@
 import re
 
 from aiogram import F, Router
+from aiogram.filters import or_f
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -60,7 +61,7 @@ async def on_gender(callback: CallbackQuery, callback_data: GenderCb, state: FSM
         await callback.message.answer(texts.ASK_HEIGHT)
 
 
-@router.message(ProfileForm.height, F.text)
+@router.message(ProfileForm.height, F.text, ~F.text.startswith("/"))
 async def on_height(message: Message, state: FSMContext) -> None:
     value = parse_int(message.text or "", *HEIGHT_RANGE)
     if value is None:
@@ -71,7 +72,7 @@ async def on_height(message: Message, state: FSMContext) -> None:
     await message.answer(texts.ASK_WEIGHT)
 
 
-@router.message(ProfileForm.weight, F.text)
+@router.message(ProfileForm.weight, F.text, ~F.text.startswith("/"))
 async def on_weight(message: Message, state: FSMContext) -> None:
     value = parse_weight(message.text or "")
     if value is None:
@@ -82,7 +83,7 @@ async def on_weight(message: Message, state: FSMContext) -> None:
     await message.answer(texts.ASK_AGE)
 
 
-@router.message(ProfileForm.age, F.text)
+@router.message(ProfileForm.age, F.text, ~F.text.startswith("/"))
 async def on_age(message: Message, state: FSMContext) -> None:
     value = parse_int(message.text or "", *AGE_RANGE)
     if value is None:
@@ -121,3 +122,9 @@ async def on_activity(
         )
         return
     await callback.message.answer(texts.PROFILE_SAVED, reply_markup=main_menu())
+
+
+@router.callback_query(or_f(GenderCb.filter(), ActivityCb.filter()))
+async def on_stale_profile_button(callback: CallbackQuery) -> None:
+    """Old gender/activity buttons pressed outside the form: just stop the spinner."""
+    await callback.answer()

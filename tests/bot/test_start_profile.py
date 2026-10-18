@@ -9,11 +9,13 @@ from botlooks.bot.handlers.profile import (
     on_age,
     on_gender,
     on_height,
+    on_stale_profile_button,
     on_weight,
     parse_int,
     parse_weight,
     start_profile,
 )
+from botlooks.bot.handlers.profile import router as profile_router
 from botlooks.bot.handlers.start import cmd_help, cmd_profile, cmd_start
 from botlooks.bot.keyboards import ActivityCb, GenderCb, ModeCb, main_menu, packs_kb
 from botlooks.bot.states import ProfileForm
@@ -119,3 +121,42 @@ def test_keyboards() -> None:
     assert ModeCb.unpack(rows[0][0].callback_data).mode == "appearance"
     labels = [b.text for r in packs_kb(list(PACKS.values())).inline_keyboard for b in r]
     assert len(labels) == 3 and "15 ⭐" in labels[0]
+
+
+def _handler(observer: Any, callback: Any) -> Any:
+    return next(h for h in observer.handlers if h.callback is callback)
+
+
+@pytest.mark.parametrize(
+    ("step", "callback"),
+    [
+        (ProfileForm.height, on_height),
+        (ProfileForm.weight, on_weight),
+        (ProfileForm.age, on_age),
+    ],
+)
+async def test_commands_not_caught_by_numeric_steps(
+    make_message: Any, step: Any, callback: Any
+) -> None:
+    handler = _handler(profile_router.message, callback)
+    for command in ("/balance", "/buy", "/history", "/paysupport", "/refund ch"):
+        ok, _ = await handler.check(make_message(command), raw_state=step.state)
+        assert not ok, command
+    ok, _ = await handler.check(make_message("70"), raw_state=step.state)
+    assert ok
+
+
+async def test_stale_profile_buttons_are_answered(make_callback: Any) -> None:
+    handler = _handler(profile_router.callback_query, on_stale_profile_button)
+    for data in (GenderCb(gender="male"), ActivityCb(activity="low")):
+        cb = make_callback()
+        cb.data = data.pack()
+        ok, kwargs = await handler.check(cb, raw_state=None)
+        assert ok
+        kwargs.pop("raw_state", None)
+        await handler.call(cb, **kwargs)
+        cb.answer.assert_awaited_once_with()
+        cb.message.answer.assert_not_awaited()
+    callbacks = [h.callback for h in profile_router.callback_query.handlers]
+    assert callbacks.index(on_stale_profile_button) > callbacks.index(on_activity)
+    assert callbacks.index(on_stale_profile_button) > callbacks.index(on_gender)
