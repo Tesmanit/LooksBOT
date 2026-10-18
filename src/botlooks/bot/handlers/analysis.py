@@ -1,9 +1,11 @@
+import contextlib
 import html
 import logging
 from io import BytesIO
 from typing import cast
 
 from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 from aiogram.utils.chat_action import ChatActionSender
@@ -147,7 +149,9 @@ async def on_weight_ask(
     if not isinstance(callback.message, Message):
         return
     if not callback_data.yes:
-        await callback.message.edit_reply_markup(reply_markup=None)
+        with contextlib.suppress(TelegramBadRequest):  # double tap: "message is not modified"
+            await callback.message.edit_reply_markup(reply_markup=None)
+        await callback.message.answer(texts.WEIGHT_DECLINED, reply_markup=main_menu())
         return
     target = await analysis.target_weight_for(callback.from_user.id)
     if target is None:

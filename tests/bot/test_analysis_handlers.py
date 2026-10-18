@@ -3,12 +3,13 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 
 from botlooks.bot import texts
 from botlooks.bot.handlers import analysis as h
 from botlooks.bot.handlers.profile import on_activity
-from botlooks.bot.keyboards import ActivityCb, ModeCb, WeightAskCb, WeightTermCb
+from botlooks.bot.keyboards import ActivityCb, ModeCb, WeightAskCb, WeightTermCb, main_menu
 from botlooks.bot.states import AnalysisFlow, ProfileForm
 from botlooks.domain.schemas import (
     AppearanceResult,
@@ -270,6 +271,17 @@ async def test_weight_ask_no_removes_keyboard(make_callback: Any, analysis: Any)
     await h.on_weight_ask(cb, WeightAskCb(analysis_id=1, yes=False), analysis)
     cb.message.edit_reply_markup.assert_awaited_once_with(reply_markup=None)
     cb.answer.assert_awaited_once()
+    assert cb.message.answer.await_args.args[0] == texts.WEIGHT_DECLINED
+    assert cb.message.answer.await_args.kwargs["reply_markup"] == main_menu()
+
+
+async def test_weight_ask_no_double_tap_still_shows_menu(make_callback: Any, analysis: Any) -> None:
+    cb = make_callback()
+    cb.message.edit_reply_markup = AsyncMock(
+        side_effect=TelegramBadRequest(MagicMock(), "message is not modified")
+    )
+    await h.on_weight_ask(cb, WeightAskCb(analysis_id=1, yes=False), analysis)
+    assert cb.message.answer.await_args.kwargs["reply_markup"] == main_menu()
 
 
 async def test_weight_ask_yes_asks_term(make_callback: Any, analysis: Any) -> None:
