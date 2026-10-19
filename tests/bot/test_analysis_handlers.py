@@ -21,6 +21,7 @@ from botlooks.domain.schemas import (
 from botlooks.llm.base import LLMUnavailableError
 from botlooks.services.analysis import AnalysisOutcome, AnalysisService, ProfileIncompleteError
 from botlooks.services.billing import BillingService, NoCreditsError
+from botlooks.services.looks import LooksOutcome, LooksService
 from botlooks.services.weight import WeightPlan
 
 APPEARANCE: dict[str, Any] = {
@@ -88,15 +89,36 @@ def billing() -> Any:
 
 
 @pytest.fixture
+def looks() -> Any:
+    lk = AsyncMock(spec=LooksService)
+    lk.render.return_value = LooksOutcome(b"img", "cap", 0)
+    return lk
+
+
+@pytest.fixture
 def photo_msg(make_message: Any) -> Any:
     def factory() -> Any:
         m = make_message(photo=[MagicMock(), MagicMock()])
         m.chat = MagicMock()
         m.chat.id = 1
         m.answer_photo = AsyncMock()
+        m.events = MagicMock()
+        m.events.attach_mock(m.answer, "answer")
+        m.events.attach_mock(m.answer_photo, "answer_photo")
         return m
 
     return factory
+
+
+def _events(msg: Any) -> list[tuple[str, Any, Any]]:
+    """Sent messages in order: (kind, text or caption, reply_markup)."""
+    out = []
+    for name, args, kwargs in msg.events.mock_calls:
+        if name == "answer":
+            out.append(("text", args[0], kwargs.get("reply_markup")))
+        elif name == "answer_photo":
+            out.append(("photo", kwargs.get("caption"), kwargs.get("reply_markup")))
+    return out
 
 
 def _texts(msg: Any) -> list[str]:
@@ -104,7 +126,7 @@ def _texts(msg: Any) -> list[str]:
 
 
 async def test_parallel_photos_single_run(
-    state: FSMContext, bot: Any, analysis: Any, billing: Any, photo_msg: Any
+    state: FSMContext, bot: Any, analysis: Any, billing: Any, photo_msg: Any, looks: Any
 ) -> None:
     async def slow_run(*a: Any, **k: Any) -> AnalysisOutcome:
         await asyncio.sleep(0.05)
@@ -115,8 +137,8 @@ async def test_parallel_photos_single_run(
     await state.update_data(mode="appearance")
     m1, m2 = photo_msg(), photo_msg()
     await asyncio.gather(
-        h.on_photo(m1, state, bot, analysis, billing),
-        h.on_photo(m2, state, bot, analysis, billing),
+        h.on_photo(m1, state, bot, analysis, billing, looks),
+        h.on_photo(m2, state, bot, analysis, billing, looks),
     )
     assert analysis.run.await_count == 1
     assert any(texts.BUSY in t for t in _texts(m2))
@@ -124,25 +146,123 @@ async def test_parallel_photos_single_run(
 
 
 async def test_style_sends_palette(
-    state: FSMContext, bot: Any, analysis: Any, billing: Any, photo_msg: Any
+    state: FSMContext, bot: Any, analysis: Any, billing: Any, photo_msg: Any, looks: Any
 ) -> None:
     analysis.run.return_value = AnalysisOutcome(style_result(), 5, False)
     await state.set_state(AnalysisFlow.waiting_photo)
     await state.update_data(mode="style")
     m = photo_msg()
-    await h.on_photo(m, state, bot, analysis, billing)
-    m.answer_photo.assert_awaited_once()
+    await h.on_photo(m, state, bot, analysis, billing, looks)
+    photos = [e for e in _events(m) if e[0] == "photo"]
+    assert photos == [("photo", "cap", None), ("photo", None, main_menu())]
+    assert m.answer_photo.await_args_list[1].args[0].filename == "palette.png"
     assert await state.get_state() is None
 
 
+async def test_parallel_photos_single_run_while_rendering(
+    state: FSMContext, bot: Any, analysis: Any, billing: Any, photo_msg: Any, looks: Any
+) -> None:
+    async def slow_render(*a: Any, **k: Any) -> LooksOutcome:
+        await asyncio.sleep(0.05)
+        return LooksOutcome(b"img", "cap", 0)
+
+    analysis.run.return_value = AnalysisOutcome(appearance_result(), 1, False)
+    looks.render.side_effect = slow_render
+    await state.set_state(AnalysisFlow.waiting_photo)
+    await state.update_data(mode="appearance")
+    m1, m2 = photo_msg(), photo_msg()
+
+    async def second() -> None:
+        await asyncio.sleep(0.01)  # first photo is already past the text analysis
+        await h.on_photo(m2, state, bot, analysis, billing, looks)
+
+    await asyncio.gather(h.on_photo(m1, state, bot, analysis, billing, looks), second())
+    assert looks.render.await_count == 1
+    assert any(texts.BUSY in t for t in _texts(m2))
+
+
+async def test_appearance_sends_collage_after_text(
+    state: FSMContext, bot: Any, analysis: Any, billing: Any, photo_msg: Any, looks: Any
+) -> None:
+    result = appearance_result()
+    analysis.run.return_value = AnalysisOutcome(result, 7, True)
+    await state.set_state(AnalysisFlow.waiting_photo)
+    await state.update_data(mode="appearance")
+    m = photo_msg()
+    await h.on_photo(m, state, bot, analysis, billing, looks)
+    kinds = [(kind, body) for kind, body, _ in _events(m)]
+    assert kinds[1:] == [
+        ("text", texts.RENDERING),
+        ("photo", "cap"),
+        ("text", texts.ASK_WEIGHT_LOSS),
+    ]
+    assert "Образ 1" in kinds[0][1]
+    user_id, photo, passed = looks.render.await_args.args
+    assert user_id == 1 and isinstance(photo, bytes) and passed == result
+
+
+async def test_appearance_without_plan_menu_on_collage(
+    state: FSMContext, bot: Any, analysis: Any, billing: Any, photo_msg: Any, looks: Any
+) -> None:
+    analysis.run.return_value = AnalysisOutcome(appearance_result(), 7, False)
+    await state.set_state(AnalysisFlow.waiting_photo)
+    await state.update_data(mode="appearance")
+    m = photo_msg()
+    await h.on_photo(m, state, bot, analysis, billing, looks)
+    events = _events(m)
+    assert events[-1] == ("photo", "cap", main_menu())
+    assert all(markup is None for _, _, markup in events[:-1])
+
+
+async def test_collage_failure_reports_refund(
+    state: FSMContext, bot: Any, analysis: Any, billing: Any, photo_msg: Any, looks: Any
+) -> None:
+    analysis.run.return_value = AnalysisOutcome(appearance_result(), 7, False)
+    looks.render.return_value = LooksOutcome(None, "cap", 1)
+    await state.set_state(AnalysisFlow.waiting_photo)
+    await state.update_data(mode="appearance")
+    m = photo_msg()
+    await h.on_photo(m, state, bot, analysis, billing, looks)
+    m.answer_photo.assert_not_awaited()
+    assert _events(m)[-1] == ("text", texts.IMAGE_FAILED_REFUNDED, main_menu())
+    assert await state.get_state() is None
+
+
+async def test_collage_send_error_continues(
+    state: FSMContext, bot: Any, analysis: Any, billing: Any, photo_msg: Any, looks: Any
+) -> None:
+    analysis.run.return_value = AnalysisOutcome(style_result(), 5, False)
+    await state.set_state(AnalysisFlow.waiting_photo)
+    await state.update_data(mode="style")
+    m = photo_msg()
+    m.answer_photo.side_effect = [TelegramBadRequest(MagicMock(), "bad photo"), None]
+    await h.on_photo(m, state, bot, analysis, billing, looks)
+    assert texts.IMAGE_SEND_FAILED in [body for _, body, _ in _events(m)]
+    assert m.answer_photo.await_count == 2  # the palette is still sent
+    assert _events(m)[-1][2] == main_menu()
+    assert 1 not in h._in_progress
+
+
+async def test_unsuitable_skips_collage(
+    state: FSMContext, bot: Any, analysis: Any, billing: Any, photo_msg: Any, looks: Any
+) -> None:
+    analysis.run.return_value = AnalysisOutcome(
+        Unsuitable(status="unsuitable", reason="r"), None, False
+    )
+    await state.set_state(AnalysisFlow.waiting_photo)
+    await state.update_data(mode="style")
+    await h.on_photo(photo_msg(), state, bot, analysis, billing, looks)
+    looks.render.assert_not_awaited()
+
+
 async def test_appearance_offers_weight_plan(
-    state: FSMContext, bot: Any, analysis: Any, billing: Any, photo_msg: Any
+    state: FSMContext, bot: Any, analysis: Any, billing: Any, photo_msg: Any, looks: Any
 ) -> None:
     analysis.run.return_value = AnalysisOutcome(appearance_result(), 7, True)
     await state.set_state(AnalysisFlow.waiting_photo)
     await state.update_data(mode="appearance")
     m = photo_msg()
-    await h.on_photo(m, state, bot, analysis, billing)
+    await h.on_photo(m, state, bot, analysis, billing, looks)
     last = m.answer.await_args_list[-1]
     assert last.args[0] == texts.ASK_WEIGHT_LOSS
     cb = last.kwargs["reply_markup"].inline_keyboard[0][0].callback_data
@@ -151,7 +271,7 @@ async def test_appearance_offers_weight_plan(
 
 
 async def test_unsuitable_escapes_reason(
-    state: FSMContext, bot: Any, analysis: Any, billing: Any, photo_msg: Any
+    state: FSMContext, bot: Any, analysis: Any, billing: Any, photo_msg: Any, looks: Any
 ) -> None:
     analysis.run.return_value = AnalysisOutcome(
         Unsuitable(status="unsuitable", reason="<тёмное> & мутное"), None, False
@@ -159,7 +279,7 @@ async def test_unsuitable_escapes_reason(
     await state.set_state(AnalysisFlow.waiting_photo)
     await state.update_data(mode="style")
     m = photo_msg()
-    await h.on_photo(m, state, bot, analysis, billing)
+    await h.on_photo(m, state, bot, analysis, billing, looks)
     assert "&lt;тёмное&gt; &amp; мутное" in m.answer.await_args.args[0]
     # The user is asked for another photo, so keep waiting for it in the same mode.
     assert await state.get_state() == AnalysisFlow.waiting_photo.state
@@ -185,6 +305,7 @@ async def test_errors_clear_state(
     analysis: Any,
     billing: Any,
     photo_msg: Any,
+    looks: Any,
     exc: Exception,
     text: str,
 ) -> None:
@@ -192,19 +313,19 @@ async def test_errors_clear_state(
     await state.set_state(AnalysisFlow.waiting_photo)
     await state.update_data(mode="style")
     m = photo_msg()
-    await h.on_photo(m, state, bot, analysis, billing)
+    await h.on_photo(m, state, bot, analysis, billing, looks)
     assert m.answer.await_args.args[0] == text
     assert await state.get_state() is None
     assert 1 not in h._in_progress
 
 
 async def test_profile_incomplete_restarts_form(
-    state: FSMContext, bot: Any, analysis: Any, billing: Any, photo_msg: Any
+    state: FSMContext, bot: Any, analysis: Any, billing: Any, photo_msg: Any, looks: Any
 ) -> None:
     analysis.run.side_effect = ProfileIncompleteError()
     await state.set_state(AnalysisFlow.waiting_photo)
     await state.update_data(mode="style")
-    await h.on_photo(photo_msg(), state, bot, analysis, billing)
+    await h.on_photo(photo_msg(), state, bot, analysis, billing, looks)
     assert await state.get_state() == ProfileForm.gender.state
     assert (await state.get_data())["pending_mode"] == "style"
 
@@ -325,16 +446,17 @@ async def test_weight_term_forged_months(make_callback: Any, analysis: Any) -> N
 
 
 async def test_long_result_split_markup_only_on_last(
-    state: FSMContext, bot: Any, analysis: Any, billing: Any, photo_msg: Any
+    state: FSMContext, bot: Any, analysis: Any, billing: Any, photo_msg: Any, looks: Any
 ) -> None:
     long = appearance_result().model_copy(update={"summary": "s" * 3000, "face_shape": "f" * 3000})
     analysis.run.return_value = AnalysisOutcome(long, 7, False)
     await state.set_state(AnalysisFlow.waiting_photo)
     await state.update_data(mode="appearance")
     m = photo_msg()
-    await h.on_photo(m, state, bot, analysis, billing)
-    calls = m.answer.await_args_list
-    assert len(calls) >= 2
-    assert all(len(c.args[0]) <= 4096 for c in calls)
-    assert all(c.kwargs.get("reply_markup") is None for c in calls[:-1])
-    assert calls[-1].kwargs["reply_markup"] is not None
+    await h.on_photo(m, state, bot, analysis, billing, looks)
+    events = _events(m)
+    texts_sent = [body for kind, body, _ in events if kind == "text"]
+    assert len(texts_sent) >= 3  # at least two chunks of the result plus RENDERING
+    assert all(len(t) <= 4096 for t in texts_sent)
+    assert all(markup is None for _, _, markup in events[:-1])
+    assert events[-1] == ("photo", "cap", main_menu())

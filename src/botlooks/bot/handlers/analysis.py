@@ -7,7 +7,7 @@ from typing import cast
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
-from aiogram.types import BufferedInputFile, CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardMarkup, Message
 from aiogram.utils.chat_action import ChatActionSender
 
 from botlooks.bot import texts
@@ -36,6 +36,7 @@ from botlooks.domain.schemas import (
 from botlooks.llm.base import LLMUnavailableError
 from botlooks.services.analysis import AnalysisService, ProfileIncompleteError
 from botlooks.services.billing import BillingService, NoCreditsError
+from botlooks.services.looks import LooksService
 from botlooks.services.palette import render_palette
 
 router = Router(name="analysis")
@@ -65,6 +66,32 @@ async def on_mode(
     await ask_photo_or_buy(callback.message, state, mode, billing, user_id=user_id)
 
 
+async def _send_collage(
+    message: Message,
+    bot: Bot,
+    looks: LooksService,
+    user_id: int,
+    photo: bytes,
+    result: AppearanceResult | StyleResult,
+    reply_markup: InlineKeyboardMarkup | None,
+) -> None:
+    await message.answer(texts.RENDERING)
+    async with ChatActionSender.upload_photo(bot=bot, chat_id=message.chat.id):
+        outcome = await looks.render(user_id, photo, result)
+    if outcome.image is None:
+        await message.answer(texts.IMAGE_FAILED_REFUNDED, reply_markup=reply_markup)
+        return
+    try:
+        await message.answer_photo(
+            BufferedInputFile(outcome.image, "looks.png"),
+            caption=outcome.caption,
+            reply_markup=reply_markup,
+        )
+    except TelegramBadRequest as exc:
+        log.warning("collage send failed", extra={"error": str(exc)})
+        await message.answer(texts.IMAGE_SEND_FAILED, reply_markup=reply_markup)
+
+
 @router.message(AnalysisFlow.waiting_photo, F.photo)
 async def on_photo(
     message: Message,
@@ -72,6 +99,7 @@ async def on_photo(
     bot: Bot,
     analysis: AnalysisService,
     billing: BillingService,
+    looks: LooksService,
 ) -> None:
     user = message.from_user
     if user is None or not message.photo:
@@ -86,9 +114,10 @@ async def on_photo(
         mode = cast(Mode, data.get("mode", "appearance"))
         buffer = BytesIO()
         await bot.download(message.photo[-1], destination=buffer)
+        photo = buffer.getvalue()
         try:
             async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
-                outcome = await analysis.run(user_id, mode, buffer.getvalue())
+                outcome = await analysis.run(user_id, mode, photo)
         except NoCreditsError:
             await message.answer(texts.NO_CREDITS, reply_markup=packs_kb(PACKS.values()))
         except LLMUnavailableError:
@@ -112,10 +141,13 @@ async def on_photo(
                     and outcome.weight_plan_available
                     and outcome.analysis_id is not None
                 )
-                text_markup = (
+                collage_markup = (
                     None if isinstance(result, StyleResult) or has_plan_offer else main_menu()
                 )
-                await answer_long(message, format_result(result), reply_markup=text_markup)
+                await answer_long(message, format_result(result))
+                await _send_collage(
+                    message, bot, looks, user_id, photo, result, reply_markup=collage_markup
+                )
                 if isinstance(result, StyleResult):
                     png = render_palette(result.palette, result.avoid_colors)
                     await message.answer_photo(

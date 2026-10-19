@@ -6,6 +6,8 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
+from google import genai
+from google.genai import types
 from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -14,9 +16,11 @@ from botlooks.config import Settings
 from botlooks.db.repositories import AnalysisRepo, PaymentRepo, UserRepo
 from botlooks.db.session import make_sessionmaker
 from botlooks.llm.deepseek import DeepSeekVisionLLM
+from botlooks.llm.gemini import GeminiImageGenerator
 from botlooks.log import setup_logging
 from botlooks.services.analysis import AnalysisService
 from botlooks.services.billing import BillingService
+from botlooks.services.looks import LooksService
 
 COMMANDS = [
     BotCommand(command="start", description="Начать"),
@@ -53,6 +57,15 @@ async def main() -> None:
             json_mode=settings.deepseek_json_mode,
         )
         analysis = AnalysisService(user_repo, analysis_repo, billing, llm)
+        images = GeminiImageGenerator(
+            genai.Client(
+                api_key=settings.gemini_api_key.get_secret_value(),
+                # our generator retries itself; keep the SDK from multiplying attempts
+                http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1)),
+            ),
+            settings.gemini_image_model,
+        )
+        looks = LooksService(images, billing)
         dp = Dispatcher(
             storage=MemoryStorage(),
             settings=settings,
@@ -60,6 +73,7 @@ async def main() -> None:
             analysis_repo=analysis_repo,
             billing=billing,
             analysis=analysis,
+            looks=looks,
         )
         dp.include_router(build_router())
         await bot.set_my_commands(COMMANDS)
