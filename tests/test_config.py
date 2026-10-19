@@ -11,6 +11,7 @@ def test_settings_reads_env(monkeypatch):
         "BOT_TOKEN": "SECRET-TOKEN-123",
         "ADMIN_ID": "42",
         "DEEPSEEK_API_KEY": "k",
+        "GEMINI_API_KEY": "SECRET-GEMINI-456",
         "DATABASE_URL": "postgresql+asyncpg://u:p@h/db",
     }.items():
         monkeypatch.setenv(k, v)
@@ -18,6 +19,22 @@ def test_settings_reads_env(monkeypatch):
     assert s.admin_id == 42 and s.start_credits == 3 and s.deepseek_model == "deepseek-flash"
     assert s.deepseek_json_mode is True
     assert "SECRET-TOKEN-123" not in repr(s)
+    assert s.gemini_image_model == "gemini-2.5-flash-image"
+    assert s.gemini_api_key.get_secret_value() == "SECRET-GEMINI-456"
+    assert "SECRET-GEMINI-456" not in repr(s)
+
+
+def test_settings_requires_gemini_key(monkeypatch):
+    for k, v in {
+        "BOT_TOKEN": "t",
+        "ADMIN_ID": "42",
+        "DEEPSEEK_API_KEY": "k",
+        "DATABASE_URL": "postgresql+asyncpg://u:p@h/db",
+    }.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
 
 
 def test_settings_missing_required(monkeypatch):

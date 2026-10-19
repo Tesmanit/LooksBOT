@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-flash"
     deepseek_json_mode: bool = True
+    gemini_api_key: SecretStr
+    gemini_image_model: str = "gemini-2.5-flash-image"
     database_url: str
     start_credits: int = 3
     log_level: str = "INFO"

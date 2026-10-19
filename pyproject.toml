@@ -15,6 +15,7 @@ dependencies = [
     "pydantic>=2",
     "pydantic-settings",
     "openai>=3,<4",
+    "google-genai>=1.30,<2",
     "pillow>=10.1",
 ]
 

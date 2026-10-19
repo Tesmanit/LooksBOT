@@ -56,6 +56,7 @@ def settings() -> Settings:
         bot_token="123:abc",  # type: ignore[arg-type]
         admin_id=1,
         deepseek_api_key="k",  # type: ignore[arg-type]
+        gemini_api_key="g",  # type: ignore[arg-type]
         database_url="postgresql+asyncpg://x/y",
         _env_file=None,  # type: ignore[call-arg]
     )
