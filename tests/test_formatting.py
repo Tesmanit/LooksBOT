@@ -12,14 +12,26 @@ from botlooks.domain.schemas import AppearanceResult, StyleResult
 from botlooks.services.weight import WeightPlan
 
 
+def look(i: int, **over: Any) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "name": f"Образ-{i}",
+        "haircut": "каре",
+        "facial_hair": "щетина",
+        "makeup": "тон",
+        "why": "подчёркивает скулы",
+        "image_prompt": "SECRET-PROMPT",
+    }
+    data.update(over)
+    return data
+
+
 def appearance_result(**over: Any) -> AppearanceResult:
     data: dict[str, Any] = {
         "status": "ok",
         "face_shape": "овал",
-        "haircut": {"recommended": ["каре"], "avoid": ["чёлка"], "comment": "ок"},
-        "facial_hair": {"recommendations": ["щетина"]},
+        "looks": [look(1), look(2)],
+        "avoid": ["чёлка"],
         "brows_lashes": {"recommendations": ["гребень"]},
-        "makeup": {"recommendations": ["тон"]},
         "skincare": {"observations": ["сухость"], "recommendations": ["крем"]},
         "summary": "итог",
     }
@@ -36,7 +48,15 @@ def style_result() -> StyleResult:
             "color_type_explanation": "тёплый",
             "palette": colors,
             "avoid_colors": [{"name": "x", "hex": "#000000"}] * 3,
-            "styles": [{"name": "casual", "description": "d", "items": ["джинсы"]}] * 2,
+            "styles": [
+                {
+                    "name": f"casual{i}",
+                    "description": "d",
+                    "items": ["джинсы"],
+                    "image_prompt": "SECRET-PROMPT",
+                }
+                for i in range(4)
+            ],
             "height_tips": ["tip"],
             "summary": "итог",
         }
@@ -48,9 +68,28 @@ def test_html_escaped() -> None:
     assert "&lt;b&gt;x&lt;/b&gt; &amp; &lt;5 мин" in out
 
 
-def test_appearance_skips_none_sections() -> None:
-    assert "Макияж" not in format_result(appearance_result(makeup=None))
-    assert "Борода" not in format_result(appearance_result(facial_hair=None))
+def test_appearance_numbered_looks() -> None:
+    out = format_result(appearance_result())
+    assert "Образ 1: Образ-1" in out and "Образ 2: Образ-2" in out
+    assert "Лучше избегать" in out and "чёлка" in out
+    assert "подчёркивает скулы" in out
+
+
+def test_appearance_look_skips_none_fields() -> None:
+    no_beard = appearance_result(looks=[look(1, facial_hair=None), look(2, facial_hair=None)])
+    assert "Борода" not in format_result(no_beard)
+    no_makeup = appearance_result(looks=[look(1, makeup=None), look(2, makeup=None)])
+    assert "Макияж" not in format_result(no_makeup)
+
+
+def test_style_four_numbered_directions() -> None:
+    out = format_result(style_result())
+    assert all(f"{i}. casual{i - 1}" in out for i in range(1, 5))
+
+
+def test_image_prompt_not_shown() -> None:
+    assert "SECRET-PROMPT" not in format_result(appearance_result())
+    assert "SECRET-PROMPT" not in format_result(style_result())
 
 
 def test_style_lists_hex() -> None:

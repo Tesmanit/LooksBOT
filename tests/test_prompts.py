@@ -38,3 +38,20 @@ def test_repair_suffix():
         "Предыдущий ответ не прошёл проверку. "
         "Верни строго один JSON-объект по схеме, без текста вокруг."
     )
+
+
+def test_appearance_prompt_picks_two_best():
+    system, _ = build_prompts("appearance", P)
+    assert "2 лучших" in system and "image_prompt" in system
+
+
+def test_style_prompt_picks_four_best():
+    system, _ = build_prompts("style", P)
+    assert "4 лучших" in system and "image_prompt" in system
+
+
+def test_image_prompt_rules():
+    for mode in ("appearance", "style"):
+        system, _ = build_prompts(mode, P)
+        assert "на английском" in system and "только" in system
+        assert "знаменитостей" in system

@@ -3,7 +3,13 @@ from html import escape
 from typing import Any
 
 from botlooks.bot import texts
-from botlooks.domain.schemas import AppearanceResult, Mode, NamedColor, StyleResult
+from botlooks.domain.schemas import (
+    AppearanceLook,
+    AppearanceResult,
+    Mode,
+    NamedColor,
+    StyleResult,
+)
 from botlooks.services.weight import WeightPlan
 
 _MODE_LABEL = {"appearance": "Внешность", "style": "Стиль"}
@@ -31,21 +37,22 @@ def _colors(colors: list[NamedColor]) -> str:
     return "\n".join(f"• {_e(c.name)} — {_e(c.hex.upper())}" for c in colors)
 
 
+def _format_look(n: int, look: AppearanceLook) -> str:
+    lines = [f"Стрижка: {_e(look.haircut)}"]
+    if look.facial_hair is not None:
+        lines.append(f"Борода: {_e(look.facial_hair)}")
+    if look.makeup is not None:
+        lines.append(f"Макияж: {_e(look.makeup)}")
+    lines.append(f"Почему: {_e(look.why)}")
+    return _section(f"Образ {n}: {_e(look.name)}", "\n".join(lines))
+
+
 def _format_appearance(r: AppearanceResult) -> str:
-    parts = [
-        _section("Форма лица", _e(r.face_shape)),
-        _section(
-            "Стрижка",
-            f"Рекомендуется:\n{_bullets(r.haircut.recommended)}\n"
-            f"Лучше избегать:\n{_bullets(r.haircut.avoid)}\n{_e(r.haircut.comment)}",
-        ),
-    ]
-    if r.facial_hair is not None:
-        parts.append(_section("Борода", _bullets(r.facial_hair.recommendations)))
+    parts = [_section("Форма лица", _e(r.face_shape))]
+    parts.extend(_format_look(n, look) for n, look in enumerate(r.looks, 1))
+    parts.append(_section("Лучше избегать", _bullets(r.avoid)))
     if r.brows_lashes.recommendations:
         parts.append(_section("Брови и ресницы", _bullets(r.brows_lashes.recommendations)))
-    if r.makeup is not None:
-        parts.append(_section("Макияж", _bullets(r.makeup.recommendations)))
     parts.append(
         _section(
             "Уход за кожей",
@@ -59,7 +66,8 @@ def _format_appearance(r: AppearanceResult) -> str:
 
 def _format_style(r: StyleResult) -> str:
     styles = "\n\n".join(
-        f"<b>{_e(s.name)}</b>\n{_e(s.description)}\n{_bullets(s.items)}" for s in r.styles
+        f"<b>{n}. {_e(s.name)}</b>\n{_e(s.description)}\n{_bullets(s.items)}"
+        for n, s in enumerate(r.styles, 1)
     )
     parts = [
         _section(

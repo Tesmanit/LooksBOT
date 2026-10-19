@@ -30,8 +30,8 @@ STYLE = json.dumps(
         "palette": [_color(i) for i in range(6)],
         "avoid_colors": [_color(i) for i in range(3)],
         "styles": [
-            {"name": "Smart casual", "description": "d", "items": ["i"]},
-            {"name": "Classic", "description": "d", "items": ["i"]},
+            {"name": f"Стиль {i}", "description": "d", "items": ["i"], "image_prompt": "p"}
+            for i in range(4)
         ],
         "height_tips": ["t"],
         "summary": "итог",
@@ -41,10 +41,18 @@ APPEARANCE = json.dumps(
     {
         "status": "ok",
         "face_shape": "овальное",
-        "haircut": {"recommended": ["a"], "avoid": ["b"], "comment": "c"},
-        "facial_hair": {"recommendations": ["борода"]},
+        "looks": [
+            {
+                "name": f"Образ {i}",
+                "haircut": "h",
+                "facial_hair": "борода",
+                "why": "w",
+                "image_prompt": "p",
+            }
+            for i in (1, 2)
+        ],
+        "avoid": ["b"],
         "brows_lashes": {"recommendations": ["брови"]},
-        "makeup": None,
         "skincare": {"observations": ["o"], "recommendations": ["r"]},
         "summary": "итог",
     }

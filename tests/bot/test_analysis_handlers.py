@@ -26,10 +26,12 @@ from botlooks.services.weight import WeightPlan
 APPEARANCE: dict[str, Any] = {
     "status": "ok",
     "face_shape": "овал",
-    "haircut": {"recommended": ["a"], "avoid": ["b"], "comment": "c"},
-    "facial_hair": {"recommendations": ["x"]},
+    "looks": [
+        {"name": f"look{i}", "haircut": "h", "facial_hair": "x", "why": "w", "image_prompt": "p"}
+        for i in (1, 2)
+    ],
+    "avoid": ["b"],
     "brows_lashes": {"recommendations": ["y"]},
-    "makeup": None,
     "skincare": {"observations": ["o"], "recommendations": ["r"]},
     "summary": "<5 мин & готово",
 }
@@ -47,8 +49,8 @@ def style_result() -> StyleResult:
         palette=_colors(6),
         avoid_colors=_colors(3),
         styles=[
-            StyleDirection(name="s1", description="d", items=["i"]),
-            StyleDirection(name="s2", description="d", items=["i"]),
+            StyleDirection(name=f"s{i}", description="d", items=["i"], image_prompt="p")
+            for i in range(1, 5)
         ],
         height_tips=["t"],
         summary="sum",

@@ -22,12 +22,6 @@ class Unsuitable(BaseModel):
     reason: str
 
 
-class Haircut(BaseModel):
-    recommended: list[str]
-    avoid: list[str]
-    comment: str
-
-
 class Recommendations(BaseModel):
     recommendations: list[str]
 
@@ -37,13 +31,21 @@ class Skincare(BaseModel):
     recommendations: list[str]
 
 
+class AppearanceLook(BaseModel):
+    name: str
+    haircut: str
+    facial_hair: str | None = None
+    makeup: str | None = None
+    why: str
+    image_prompt: str
+
+
 class AppearanceResult(BaseModel):
     status: Literal["ok"]
     face_shape: str
-    haircut: Haircut
-    facial_hair: Recommendations | None = None
+    looks: list[AppearanceLook] = Field(min_length=2, max_length=2)
+    avoid: list[str]
     brows_lashes: Recommendations
-    makeup: Recommendations | None = None
     skincare: Skincare
     summary: str
 
@@ -57,6 +59,7 @@ class StyleDirection(BaseModel):
     name: str
     description: str
     items: list[str]
+    image_prompt: str
 
 
 class StyleResult(BaseModel):
@@ -65,7 +68,7 @@ class StyleResult(BaseModel):
     color_type_explanation: str
     palette: list[NamedColor] = Field(min_length=6, max_length=8)
     avoid_colors: list[NamedColor] = Field(min_length=3, max_length=4)
-    styles: list[StyleDirection] = Field(min_length=2, max_length=3)
+    styles: list[StyleDirection] = Field(min_length=4, max_length=4)
     height_tips: list[str]
     summary: str
 
@@ -99,8 +102,9 @@ def parse_result(mode: Mode, raw: str, gender: Gender) -> AnalysisResult:
         appearance = AppearanceResult.model_validate(data)
     except ValidationError as exc:
         raise ResultParseError(f"schema validation failed: {exc}") from exc
-    if gender == "female":
-        appearance.facial_hair = None
-    else:
-        appearance.makeup = None
+    for look in appearance.looks:
+        if gender == "female":
+            look.facial_hair = None
+        else:
+            look.makeup = None
     return appearance
