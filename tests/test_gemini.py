@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
+import aiohttp
 import pytest
 from google.genai import errors
 
@@ -99,6 +100,27 @@ async def test_gives_up_after_three_attempts() -> None:
 
 async def test_client_error_not_retried() -> None:
     client = fake_client(api_error(400))
+    with pytest.raises(ImageGenerationError):
+        await GeminiImageGenerator(client, "m", sleep=AsyncMock()).edit(b"x", "i", "1:1")
+    assert calls(client).await_count == 1
+
+
+@pytest.mark.parametrize(
+    "exc", [aiohttp.ServerDisconnectedError(), aiohttp.ClientConnectionError("dns")]
+)
+async def test_retries_on_aiohttp_network_errors(exc: Exception) -> None:
+    client = fake_client(exc, image_response(b"OK"))
+    assert await GeminiImageGenerator(client, "m", sleep=AsyncMock()).edit(b"x", "i", "1:1")
+
+
+async def test_network_down_gives_up() -> None:
+    client = fake_client(*(aiohttp.ServerDisconnectedError() for _ in range(3)))
+    with pytest.raises(LLMUnavailableError):
+        await GeminiImageGenerator(client, "m", sleep=AsyncMock()).edit(b"x", "i", "1:1")
+
+
+async def test_unexpected_sdk_error_is_image_error() -> None:
+    client = fake_client(errors.UnknownApiResponseError("bad body"))
     with pytest.raises(ImageGenerationError):
         await GeminiImageGenerator(client, "m", sleep=AsyncMock()).edit(b"x", "i", "1:1")
     assert calls(client).await_count == 1

@@ -5,6 +5,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+import aiohttp
 import httpx
 from google import genai
 from google.genai import errors, types
@@ -20,7 +21,9 @@ _PAUSES = (1, 2)
 def _retryable(exc: BaseException) -> bool:
     if isinstance(exc, errors.APIError):
         return exc.code == 429 or exc.code >= 500
-    return isinstance(exc, TimeoutError | httpx.TransportError)
+    # The SDK sends async requests through aiohttp when it is installed (aiogram brings it),
+    # and through httpx otherwise.
+    return isinstance(exc, TimeoutError | aiohttp.ClientError | httpx.TransportError)
 
 
 def _extract_image(response: Any) -> bytes:
@@ -58,7 +61,7 @@ class GeminiImageGenerator:
                 response = await self._client.aio.models.generate_content(
                     model=self.model, contents=contents, config=config
                 )
-            except (errors.APIError, TimeoutError, httpx.TransportError) as exc:
+            except Exception as exc:  # any provider failure must end in a refund, not a crash
                 if not _retryable(exc):
                     raise ImageGenerationError(type(exc).__name__) from exc
                 logger.warning(
